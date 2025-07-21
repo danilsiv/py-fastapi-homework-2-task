@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func, insert
+from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
@@ -175,7 +175,58 @@ async def update_movie(
     if movie is None:
         raise HTTPException(status_code=404, detail="Movie with the given ID was not found.")
 
-    for key, value in updated_data.dict(exclude_unset=True).items():
+    movie_dict = updated_data.dict(exclude_unset=True)
+    country_code = movie_dict.pop("country", None)
+    genre_names = movie_dict.pop("genres", None)
+    actor_names = movie_dict.pop("actors", None)
+    language_names = movie_dict.pop("languages", None)
+
+    if country_code:
+        result = await db.execute(select(CountryModel).where(CountryModel.code == country_code))
+        country = result.scalar_one_or_none()
+        if not country:
+            country = CountryModel(code=country_code)
+            db.add(country)
+            await db.flush()
+        movie_dict["country_id"] = country.id
+
+    if genre_names:
+        genres = []
+        for name in genre_names:
+            result = await db.execute(select(GenreModel).where(GenreModel.name == name))
+            genre = result.scalar_one_or_none()
+            if not genre:
+                genre = GenreModel(name=name)
+                db.add(genre)
+                await db.flush()
+            genres.append(genre)
+            movie.genres = genres
+
+    if actor_names:
+        actors = []
+        for name in actor_names:
+            result = await db.execute(select(ActorModel).where(ActorModel.name == name))
+            actor = result.scalar_one_or_none()
+            if not actor:
+                actor = ActorModel(name=name)
+                db.add(actor)
+                await db.flush()
+            actors.append(actor)
+            movie.actors = actors
+
+    if language_names:
+        languages = []
+        for name in language_names:
+            result = await db.execute(select(LanguageModel).where(LanguageModel.name == name))
+            language = result.scalar_one_or_none()
+            if not language:
+                language = LanguageModel(name=name)
+                db.add(language)
+                await db.flush()
+            languages.append(language)
+            movie.languages = languages
+
+    for key, value in movie_dict.items():
         setattr(movie, key, value)
 
     await db.commit()
